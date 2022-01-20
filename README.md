@@ -1,1 +1,1 @@
-concordia-go-curl
+concordia-py-curl
