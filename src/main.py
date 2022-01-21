@@ -49,3 +49,15 @@ if __name__ == "__main__":
         "Content-Length": 23
     }
     httpc.post(url="https://httpbin.org/post", header=header, body='{"test": ["something"]}', verbose=True)
+
+    # Test PUT with Body
+    print("\r\n=== PUT WITH BODY ===")
+    header = {
+        "Content-Type": "application/json",
+        "Content-Length": 23
+    }
+    httpc.put(url="https://httpbin.org/put", header=header, body='{"test": ["something"]}', verbose=True)
+
+    # Test simple DELETE
+    print("\r\n=== SIMPLE DELETE ===")
+    httpc.delete(url="https://httpbin.org/delete?test=true", verbose=True)
