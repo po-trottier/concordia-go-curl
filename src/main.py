@@ -1,5 +1,4 @@
 # Packages
-import argparse
 import time
 
 # Custom Class
@@ -45,16 +44,14 @@ if __name__ == "__main__":
     # Test POST with Body
     print("\r\n=== POST WITH BODY ===")
     header = {
-        "Content-Type": "application/json",
-        "Content-Length": 23
+        "Content-Type": "application/json"
     }
     httpc.post(url="https://httpbin.org/post", header=header, body='{"test": ["something"]}', verbose=True)
 
     # Test PUT with Body
     print("\r\n=== PUT WITH BODY ===")
     header = {
-        "Content-Type": "application/json",
-        "Content-Length": 23
+        "Content-Type": "application/json"
     }
     httpc.put(url="https://httpbin.org/put", header=header, body='{"test": ["something"]}', verbose=True)
 

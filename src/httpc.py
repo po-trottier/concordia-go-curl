@@ -55,10 +55,13 @@ def __request(verb, url, header, body=None, verbose=False):
         if header:
             for key in header:
                 uri += f"{key}: {header[key]}\r\n"
-        uri += "\r\n"
-        # If the request body is given add it after an empty line
+        # If the request body is given calculate the content-length
+        # automatically and add the body after an empty line
         if body:
+            uri += f"Content-Length: {len(body)}\r\n\r\n"
             uri += body + "\r\n"
+        else:
+            uri += "\r\n"
         # Send the Request to the URI
         __socket.sendall(uri.encode())
         if verbose:
