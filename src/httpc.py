@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import socket
@@ -15,7 +16,7 @@ class HttpVerb(Enum):
 # Connection ports
 __HTTP_PORT = 80
 # Socket buffer size
-__BUFFER_SIZE = 1024
+__BUFFER_SIZE = 1
 
 
 def __parse_url(url):
@@ -29,6 +30,33 @@ def __parse_url(url):
         "args": result.group(6),
         "port": __HTTP_PORT
     }
+
+
+def __receive_data(sock):
+    # Read the socket data byte by byte until we reach the end of the headers
+    data = b''
+    while b'\r\n\r\n' not in data:
+        data += sock.recv(__BUFFER_SIZE)
+
+    # Get a string from the header bytes without the empty lines
+    header_data = data[:-4].decode()
+
+    # Ignore the HTTP Version and Request Status
+    header_strings = header_data.splitlines()[1:]
+
+    # Build a dictionary from the string
+    headers = {}
+    for string in header_strings:
+        header = string.split(': ')
+        headers[header[0]] = header[1]
+
+    # Create a dictionary from the headers
+    content_length = int(headers.get('Content-Length'))
+
+    if content_length:
+        data += sock.recv(content_length)
+
+    return data
 
 
 def __parse_response(data):
@@ -49,8 +77,8 @@ def __parse_response(data):
             # We found the start of the body
             body_index = index + 1
             break
-        full_header = re.search('^([A-z-]+): (.+)', lines[index])
-        headers[full_header.group(1)] = full_header.group(2)
+        header = lines[index].split(': ')
+        headers[header[0]] = header[1]
 
     # Anything after the empty line is the body
     body = None
@@ -78,10 +106,10 @@ def __request(verb, url, header, body=None, verbose=False):
 
     __socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    if verbose:
-        print(f"[SENDING] {verb.value} Request:", url)
-
     try:
+        if verbose:
+            print(f"[SENDING] {verb.value} Request:", url)
+
         # Get the Host, Port, Path and Args
         parsed = __parse_url(url)
 
@@ -93,31 +121,47 @@ def __request(verb, url, header, body=None, verbose=False):
         args = parsed['args'] if parsed['args'] else ''
 
         # Build a URI from all the parts
-        uri = f"{verb.value} {path}{args} HTTP/1.1\r\nHost: {parsed['hostname']}\r\n"
+        content = f"{verb.value} {path}{args} HTTP/1.1\r\nHost: {parsed['hostname']}\r\n"
 
         # If the headers are given add them after the hose
         if header:
-            for key in header:
-                uri += f"{key}: {header[key]}\r\n"
+            # If the headers are a dictionary add them nicely
+            if isinstance(header, dict):
+                for key in header:
+                    content += f"{key}: {header[key]}\r\n"
+            # If we don't recognize the format just dump everything
+            else:
+                content += header
 
         # If the request body is given calculate the content-length
         # automatically and add the body after an empty line
         if body:
-            uri += f"Content-Length: {len(body)}\r\n\r\n"
-            uri += body + "\r\n"
+            if isinstance(body, dict):
+                json_body = json.dumps(body)
+                content += f"Content-Length: {len(json_body)}\r\n\r\n"
+                content += json_body + "\r\n"
+            else:
+                content += f"Content-Length: {len(body)}\r\n\r\n"
+                content += body + "\r\n"
         else:
-            uri += "\r\n"
+            content += "\r\n"
 
         # Send the Request to the URI
-        __socket.sendall(uri.encode())
+        __socket.sendall(content.encode())
+
         if verbose:
-            print(f"[SENT] {verb.value} Request:\r\n\r\n{uri}")
+            print(f"[SENT] {verb.value} Request:\r\n\r\n{content}")
 
         # Receive the Request Response
-        # TODO Make sure we get the whole response
-        data = __socket.recv(__BUFFER_SIZE)
+        data = __receive_data(__socket)
+
         if verbose:
             print(f"[SUCCESS] {verb.value} Request: Response Received")
+
+        __socket.close()
+
+        if verbose:
+            print(f"[PARSING] {verb.value} Request: Parsing Response Data")
 
         # Return the response data
         return __parse_response(data.decode("utf-8"))
