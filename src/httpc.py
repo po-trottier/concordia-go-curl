@@ -31,30 +31,75 @@ def __parse_url(url):
     }
 
 
+def __parse_response(data):
+    lines = data.splitlines()
+
+    # First line is always the status and status code
+    full_status = re.search('HTTP/\d+\.?\d* (\d+) (.*)', lines[0])
+
+    # Every line after that until the first empty line is a header
+    body_index = 0
+    headers = {}
+    for index in range(1, len(lines)):
+        # Found the empty line
+        if not lines[index]:
+            # If the next line is also empty continue until we find the body
+            if index + 1 < len(lines) and not lines[index + 1]:
+                continue
+            # We found the start of the body
+            body_index = index + 1
+            break
+        full_header = re.search('^([A-z-]+): (.+)', lines[index])
+        headers[full_header.group(1)] = full_header.group(2)
+
+    # Anything after the empty line is the body
+    body = None
+    if 0 < body_index < len(lines):
+        # Python adds the "\r\n" character before the string
+        # So we need to clean them up by starting at index 4
+        body = '\r\n'.join(lines[body_index:len(lines)])[4:]
+
+    return {
+        "status_code": full_status.group(1),
+        "status": full_status.group(2),
+        "headers": headers,
+        "body": body
+    }
+
+
 def __request(verb, url, header, body=None, verbose=False):
     # Make sure we're sending a valid request
     if not isinstance(verb, HttpVerb):
         print("Invalid verb requested", verb)
         sys.exit(1)
+
     if verbose:
         print(f"[INITIALIZE] {verb.value} Request: Initializing Socket")
+
     __socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
     if verbose:
         print(f"[SENDING] {verb.value} Request:", url)
+
     try:
         # Get the Host, Port, Path and Args
         parsed = __parse_url(url)
+
         # Connect to the Host on the proper Port
         __socket.connect((parsed['hostname'], parsed['port']))
+
         # Make sure the path is valid
         path = parsed['path'] if parsed['path'] else '/'
         args = parsed['args'] if parsed['args'] else ''
+
         # Build a URI from all the parts
         uri = f"{verb.value} {path}{args} HTTP/1.1\r\nHost: {parsed['hostname']}\r\n"
+
         # If the headers are given add them after the hose
         if header:
             for key in header:
                 uri += f"{key}: {header[key]}\r\n"
+
         # If the request body is given calculate the content-length
         # automatically and add the body after an empty line
         if body:
@@ -62,39 +107,40 @@ def __request(verb, url, header, body=None, verbose=False):
             uri += body + "\r\n"
         else:
             uri += "\r\n"
+
         # Send the Request to the URI
         __socket.sendall(uri.encode())
         if verbose:
             print(f"[SENT] {verb.value} Request:\r\n\r\n{uri}")
+
         # Receive the Request Response
         # TODO Make sure we get the whole response
         data = __socket.recv(__BUFFER_SIZE)
         if verbose:
             print(f"[SUCCESS] {verb.value} Request: Response Received")
+
         # Return the response data
-        return data.decode("utf-8")
+        return __parse_response(data.decode("utf-8"))
+
     except socket.error as error:
         print(f"[FAILED] {verb.value} Request:", os.strerror(error.errno))
         sys.exit(1)
+
     finally:
         __socket.close()
 
 
 def get(url, header=None, verbose=False):
-    response = __request(HttpVerb.GET, url, header, None, verbose)
-    print(response)
+    return __request(HttpVerb.GET, url, header, None, verbose)
 
 
 def delete(url, header=None, verbose=False):
-    response = __request(HttpVerb.DELETE, url, header, None, verbose)
-    print(response)
+    return __request(HttpVerb.DELETE, url, header, None, verbose)
 
 
 def post(url, body=None, header=None, verbose=False):
-    response = __request(HttpVerb.POST, url, header, body, verbose)
-    print(response)
+    return __request(HttpVerb.POST, url, header, body, verbose)
 
 
 def put(url, body=None, header=None, verbose=False):
-    response = __request(HttpVerb.PUT, url, header, body, verbose)
-    print(response)
+    return __request(HttpVerb.PUT, url, header, body, verbose)
