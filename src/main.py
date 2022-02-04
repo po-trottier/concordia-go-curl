@@ -44,17 +44,15 @@ if __name__ == "__main__":
 
     # Test POST with Body
     print("\r\n=== POST WITH BODY ===")
-    header = {
-        "Content-Type": "application/json"
-    }
-    pprint.pprint(httpc.post(url="https://httpbin.org/post", header=header, body='{"test": ["something"]}', verbose=VERBOSE))
+    header = {"Content-Type": "application/json"}
+    body = {"test": ["something"]}
+    pprint.pprint(httpc.post(url="https://httpbin.org/post", header=header, body=body, verbose=VERBOSE))
 
     # Test PUT with Body
     print("\r\n=== PUT WITH BODY ===")
-    header = {
-        "Content-Type": "application/json"
-    }
-    pprint.pprint(httpc.put(url="https://httpbin.org/put", header=header, body='{"test": ["something"]}', verbose=VERBOSE))
+    header = {"Content-Type": "application/json"}
+    body = {"test": ["something"]}
+    pprint.pprint(httpc.put(url="https://httpbin.org/put", header=header, body=body, verbose=VERBOSE))
 
     # Test simple DELETE
     print("\r\n=== SIMPLE DELETE ===")

@@ -83,9 +83,14 @@ def __parse_response(data):
     # Anything after the empty line is the body
     body = None
     if 0 < body_index < len(lines):
-        # Python adds the "\r\n" character before the string
-        # So we need to clean them up by starting at index 4
-        body = '\r\n'.join(lines[body_index:len(lines)])[4:]
+        # Re-join the body lines to a string
+        body_string = '\r\n'.join(lines[body_index:len(lines)])
+        # Attempt to parse the string to a dict (Expect JSON)
+        try:
+            body = json.loads(body_string)
+        # If the string is a valid JSON string return is raw
+        except ValueError:
+            body = body_string
 
     return {
         "status_code": full_status.group(1),
