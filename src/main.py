@@ -9,14 +9,6 @@ import httpc
 REQUEST_DELAY = 1
 VERBOSE = False
 
-# Use this code to read the CLI flags
-# Access a values by doing "args.host" or "args.port", etc.
-# def parse_flags():
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument("--host", help="server host", default="localhost")
-#     parser.add_argument("--port", help="server port", type=int, default=8007)
-#     return parser.parse_args()
-
 
 # Tests Entry Point
 if __name__ == "__main__":

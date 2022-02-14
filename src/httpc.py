@@ -1,5 +1,7 @@
+import argparse
 import json
 import os
+import pprint
 import re
 import socket
 import sys
@@ -193,3 +195,20 @@ def post(url, body=None, header=None, verbose=False):
 
 def put(url, body=None, header=None, verbose=False):
     return __request(HttpVerb.PUT, url, header, body, verbose)
+
+
+# CLI Tool Implementation
+
+# Access a values by doing "args.host" or "args.port", etc.
+def __parse_flags():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-verb", help="HTTP Verb to use", type=HttpVerb)
+    parser.add_argument("-v", help="Activate verbose mode", type=bool, default=False)
+    return parser.parse_args()
+
+
+flags = __parse_flags()
+
+# switch flags.verb:
+#     case HttpVerb.GET:
+#         pprint.pprint(get("", header, flags.v))
