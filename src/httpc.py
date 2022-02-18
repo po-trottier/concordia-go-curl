@@ -1,11 +1,14 @@
 import argparse
+import io
 import json
+import mimetypes
 import os
 import pprint
 import re
 import socket
 import sys
 from enum import Enum
+
 
 # IMPORTANT NOTE:
 # This script requires Python 3.10 to work due to use of match/case statements
@@ -109,7 +112,7 @@ def __parse_response(data):
     }
 
 
-def __request(verb, url, header, body=None, verbose=False):
+def __request(verb, url, header, body=None, file=None, verbose=False):
     # Make sure we're sending a valid request
     if not isinstance(verb, HttpVerb):
         print("Invalid verb requested", verb)
@@ -152,14 +155,25 @@ def __request(verb, url, header, body=None, verbose=False):
 
         # If the request body is given calculate the content-length
         # automatically and add the body after an empty line
-        if body:
-            if isinstance(body, dict):
-                json_body = json.dumps(body)
-                content += f"Content-Length: {len(json_body)}\r\n\r\n"
-                content += json_body + "\r\n"
-            else:
-                content += f"Content-Length: {len(body)}\r\n\r\n"
-                content += body + "\r\n"
+        if body or file:
+            if body:
+                if isinstance(body, dict):
+                    json_body = json.dumps(body)
+                    content += f"Content-Length: {len(json_body)}\r\n\r\n"
+                    content += json_body + "\r\n"
+                else:
+                    content += f"Content-Length: {len(body)}\r\n\r\n"
+                    content += body + "\r\n"
+            if file:
+                if isinstance(file, io.BufferedReader):
+                    file_type = mimetypes.guess_type(os.path.basename(file.name))[0]
+                    file_content = file.read()
+                    file.close()
+                    content += f"Content-Length: {len(file_content)}\r\n"
+                    content += f"Content-Type: {file_type}\r\n\r\n"
+                    content += str(file_content) + "\r\n"
+                else:
+                    raise IOError('Invalid file requested')
         else:
             content += "\r\n"
 
@@ -188,23 +202,25 @@ def __request(verb, url, header, body=None, verbose=False):
         sys.exit(1)
 
     finally:
+        if file:
+            file.close()
         __socket.close()
 
 
 def get(url, header=None, verbose=False):
-    return __request(HttpVerb.GET, url, header, None, verbose)
+    return __request(HttpVerb.GET, url, header, None, None, verbose)
 
 
 def delete(url, header=None, verbose=False):
-    return __request(HttpVerb.DELETE, url, header, None, verbose)
+    return __request(HttpVerb.DELETE, url, header, None, None, verbose)
 
 
-def post(url, body=None, header=None, verbose=False):
-    return __request(HttpVerb.POST, url, header, body, verbose)
+def post(url, body=None, file=None, header=None, verbose=False):
+    return __request(HttpVerb.POST, url, header, body, file, verbose)
 
 
-def put(url, body=None, header=None, verbose=False):
-    return __request(HttpVerb.PUT, url, header, body, verbose)
+def put(url, body=None, file=None, header=None, verbose=False):
+    return __request(HttpVerb.PUT, url, header, body, file, verbose)
 
 
 #############################################################################################
@@ -232,7 +248,7 @@ def __parse_flags():
     post_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", action="append")
     post_data_group = post_parser.add_mutually_exclusive_group()
     post_data_group.add_argument("-D", "--inlinedata", help="Inline data to be sent in the request body")
-    post_data_group.add_argument("-F", "--file", help="File to be sent in the request body", type=argparse.FileType('r'))
+    post_data_group.add_argument("-F", "--file", help="File to be sent in the request body", type=argparse.FileType('rb'))
     post_parser.add_argument("url", help="URL to point to for the request")
 
     put_parser = subparsers.add_parser(HttpVerb.PUT.value, help="PUT request")
@@ -240,7 +256,7 @@ def __parse_flags():
     put_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", action="append")
     put_data_group = put_parser.add_mutually_exclusive_group()
     put_data_group.add_argument("-D", "--inlinedata", help="Inline data to be sent in the request body")
-    put_data_group.add_argument("-F", "--file", help="File to be sent in the request body", type=argparse.FileType('r'))
+    put_data_group.add_argument("-F", "--file", help="File to be sent in the request body", type=argparse.FileType('rb'))
     put_parser.add_argument("url", help="URL to point to for the request")
 
     args = parser.parse_args()
@@ -268,23 +284,10 @@ def __parse_headers(header_args):
     return header_dictionary
 
 
-# Select the proper body variable to use for the body
-def __parse_body(data_args, file_args):
-    body = None
-
-    if data_args:
-        body = data_args
-    if file_args:
-        body = file_args
-
-    return body
-
-
 # CLI Entry Point
 if __name__ == "__main__":
     flags = __parse_flags()
     header_content = __parse_headers(flags.headers)
-    body_content = __parse_body(flags.inlinedata, flags.file)
 
     if flags.verbose:
         print(f"[ARGS] {flags.verb} Arguments: {flags}")
@@ -293,9 +296,9 @@ if __name__ == "__main__":
     match flags.verb:
         case HttpVerb.GET.value:
             pprint.pprint(get(flags.url, header_content, flags.verbose))
-        case HttpVerb.POST.value:
-            pprint.pprint(post(flags.url, body_content, header_content, flags.verbose))
-        case HttpVerb.PUT.value:
-            pprint.pprint(put(flags.url, body_content, header_content, flags.verbose))
         case HttpVerb.DELETE.value:
             pprint.pprint(delete(flags.url, header_content, flags.verbose))
+        case HttpVerb.POST.value:
+            pprint.pprint(post(flags.url, flags.inlinedata, flags.file, header_content, flags.verbose))
+        case HttpVerb.PUT.value:
+            pprint.pprint(put(flags.url, flags.inlinedata, flags.file, header_content, flags.verbose))
