@@ -268,10 +268,23 @@ def __parse_headers(header_args):
     return header_dictionary
 
 
+# Select the proper body variable to use for the body
+def __parse_body(data_args, file_args):
+    body = None
+
+    if data_args:
+        body = data_args
+    if file_args:
+        body = file_args
+
+    return body
+
+
 # CLI Entry Point
 if __name__ == "__main__":
     flags = __parse_flags()
-    headers = __parse_headers(flags.headers)
+    header_content = __parse_headers(flags.headers)
+    body_content = __parse_body(flags.inlinedata, flags.file)
 
     if flags.verbose:
         print(f"[ARGS] {flags.verb} Arguments: {flags}")
@@ -279,10 +292,10 @@ if __name__ == "__main__":
     # Send the request
     match flags.verb:
         case HttpVerb.GET.value:
-            pprint.pprint(get(flags.url, headers, flags.verbose))
+            pprint.pprint(get(flags.url, header_content, flags.verbose))
         case HttpVerb.POST.value:
-            pprint.pprint(post(flags.url, flags.body, headers, flags.verbose))
+            pprint.pprint(post(flags.url, body_content, header_content, flags.verbose))
         case HttpVerb.PUT.value:
-            pprint.pprint(put(flags.url, flags.body, headers, flags.verbose))
+            pprint.pprint(put(flags.url, body_content, header_content, flags.verbose))
         case HttpVerb.DELETE.value:
-            pprint.pprint(delete(flags.url, headers, flags.verbose))
+            pprint.pprint(delete(flags.url, header_content, flags.verbose))
