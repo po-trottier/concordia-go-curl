@@ -1,4 +1,5 @@
 import argparse
+import click
 import json
 import os
 import pprint
@@ -201,14 +202,59 @@ def put(url, body=None, header=None, verbose=False):
 
 # Access a values by doing "args.host" or "args.port", etc.
 def __parse_flags():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-verb", help="HTTP Verb to use", type=HttpVerb)
-    parser.add_argument("-v", help="Activate verbose mode", type=bool, default=False)
+    parser = argparse.ArgumentParser(prog="httpc")
+    subparsers = parser.add_subparsers(dest="verb" , required=True, help="Verb to be used")
+
+    get_parser = subparsers.add_parser(HttpVerb.GET.value, help="GET request")
+    get_parser.add_argument("-V", "--verbose", help="Activate verbose mode", action="store_true")
+    get_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", type=ascii, action="append")
+    get_parser.add_argument("url", help="URL to point to for the request", type=ascii)
+
+    delete_parser = subparsers.add_parser(HttpVerb.DELETE.value, help="DELETE request")
+    delete_parser.add_argument("-V", "--verbose", help="Activate verbose mode", action="store_true")
+    delete_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", type=ascii, action="append")
+    delete_parser.add_argument("url", help="URL to point to for the request", type=ascii)
+
+    post_parser = subparsers.add_parser(HttpVerb.POST.value, help="POST request")
+    post_parser.add_argument("-V", "--verbose", help="Activate verbose mode", action="store_true")
+    post_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", type=ascii, action="append")
+    post_data_group = post_parser.add_mutually_exclusive_group()
+    post_data_group.add_argument("-D", "--inlinedata", help="Inline data to be sent in the request body", type=ascii)
+    post_data_group.add_argument("-F", "--file", help="File to be sent in the request body", type=argparse.FileType('r'))
+    post_parser.add_argument("url", help="URL to point to for the request", type=ascii)
+
+    put_parser = subparsers.add_parser(HttpVerb.PUT.value, help="PUT request")
+    put_parser.add_argument("-V", "--verbose", help="Activate verbose mode", action="store_true")
+    put_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", type=ascii, action="append")
+    put_data_group = put_parser.add_mutually_exclusive_group()
+    put_data_group.add_argument("-D", "--inlinedata", help="Inline data to be sent in the request body", type=ascii)
+    put_data_group.add_argument("-F", "--file", help="File to be sent in the request body", type=argparse.FileType('r'))
+    put_parser.add_argument("url", help="URL to point to for the request", type=ascii)
+
     return parser.parse_args()
 
 
 flags = __parse_flags()
 
-# switch flags.verb:
-#     case HttpVerb.GET:
-#         pprint.pprint(get("", header, flags.v))
+# Validate header's format
+headers = None
+if flags.headers:
+    for header in flags.headers:
+        if len(header.split(':')) != 2:
+            print('Invalid header format. Input headers as: "Key:Value"')
+            sys.exit(1)
+
+    # Build dictionary from header strings
+    # TODO
+    headers = {}
+
+# Send the request
+match flags.verb:
+    case HttpVerb.GET.value:
+        pprint.pprint(get(flags.url, headers, flags.verbose))
+    case HttpVerb.POST.value:
+        pprint.pprint(post(flags.url, flags.body, headers, flags.verbose))
+    case HttpVerb.PUT.value:
+        pprint.pprint(put(flags.url, flags.body, headers, flags.verbose))
+    case HttpVerb.DELETE.value:
+        pprint.pprint(delete(flags.url, headers, flags.verbose))
