@@ -1,5 +1,4 @@
 import argparse
-import click
 import json
 import os
 import pprint
@@ -7,6 +6,14 @@ import re
 import socket
 import sys
 from enum import Enum
+
+# IMPORTANT NOTE:
+# This script requires Python 3.10 to work due to use of match/case statements
+
+
+#############################################################################################
+# Library Implementation
+#############################################################################################
 
 
 class HttpVerb(Enum):
@@ -23,10 +30,9 @@ __BUFFER_SIZE = 1
 
 
 def __parse_url(url):
-    # From Uniform Resource Identifier RFC
-    # https://www.rfc-editor.org/rfc/rfc3986#appendix-B
+    # From URI RFC: https://datatracker.ietf.org/doc/html/rfc3986#appendix-B
     result = re.search('^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?', url)
-    # Return the port here to allow for dynamic port selection based on the protocol later?
+    # Return the port here to allow for dynamic port selection based on the protocol later if we add SSL?
     return {
         "hostname": result.group(4),
         "path": result.group(5),
@@ -48,13 +54,13 @@ def __receive_data(sock):
     header_strings = header_data.splitlines()[1:]
 
     # Build a dictionary from the string
-    headers = {}
+    header_dictionary = {}
     for string in header_strings:
         header = string.split(': ')
-        headers[header[0]] = header[1]
+        header_dictionary[header[0]] = header[1]
 
     # Create a dictionary from the headers
-    content_length = int(headers.get('Content-Length'))
+    content_length = int(header_dictionary.get('Content-Length'))
 
     if content_length:
         data += sock.recv(content_length)
@@ -70,7 +76,7 @@ def __parse_response(data):
 
     # Every line after that until the first empty line is a header
     body_index = 0
-    headers = {}
+    header_dictionary = {}
     for index in range(1, len(lines)):
         # Found the empty line
         if not lines[index]:
@@ -81,13 +87,13 @@ def __parse_response(data):
             body_index = index + 1
             break
         header = lines[index].split(': ')
-        headers[header[0]] = header[1]
+        header_dictionary[header[0]] = header[1]
 
     # Anything after the empty line is the body
     body = None
     if 0 < body_index < len(lines):
         # Re-join the body lines to a string
-        body_string = '\r\n'.join(lines[body_index:len(lines)])
+        body_string = '\r\n'.join(lines[body_index:])
         # Attempt to parse the string to a dict (Expect JSON)
         try:
             body = json.loads(body_string)
@@ -98,7 +104,7 @@ def __parse_response(data):
     return {
         "status_code": full_status.group(1),
         "status": full_status.group(2),
-        "headers": headers,
+        "headers": header_dictionary,
         "body": body
     }
 
@@ -116,10 +122,13 @@ def __request(verb, url, header, body=None, verbose=False):
 
     try:
         if verbose:
-            print(f"[SENDING] {verb.value} Request:", url)
+            print(f"[PARSING] {verb.value} Parsing URL:", url)
 
         # Get the Host, Port, Path and Args
         parsed = __parse_url(url)
+
+        if verbose:
+            print(f"[SENDING] {verb.value} Request:", parsed)
 
         # Connect to the Host on the proper Port
         __socket.connect((parsed['hostname'], parsed['port']))
@@ -175,7 +184,7 @@ def __request(verb, url, header, body=None, verbose=False):
         return __parse_response(data.decode("utf-8"))
 
     except socket.error as error:
-        print(f"[FAILED] {verb.value} Request:", os.strerror(error.errno))
+        print(f"[FAILED] {verb.value} Error:", os.strerror(error.errno))
         sys.exit(1)
 
     finally:
@@ -198,63 +207,82 @@ def put(url, body=None, header=None, verbose=False):
     return __request(HttpVerb.PUT, url, header, body, verbose)
 
 
+#############################################################################################
 # CLI Tool Implementation
+#############################################################################################
+
 
 # Access a values by doing "args.host" or "args.port", etc.
 def __parse_flags():
     parser = argparse.ArgumentParser(prog="httpc")
-    subparsers = parser.add_subparsers(dest="verb" , required=True, help="Verb to be used")
+    subparsers = parser.add_subparsers(dest="verb", required=True, help="Verb to be used")
 
     get_parser = subparsers.add_parser(HttpVerb.GET.value, help="GET request")
     get_parser.add_argument("-V", "--verbose", help="Activate verbose mode", action="store_true")
-    get_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", type=ascii, action="append")
-    get_parser.add_argument("url", help="URL to point to for the request", type=ascii)
+    get_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", action="append")
+    get_parser.add_argument("url", help="URL to point to for the request")
 
     delete_parser = subparsers.add_parser(HttpVerb.DELETE.value, help="DELETE request")
     delete_parser.add_argument("-V", "--verbose", help="Activate verbose mode", action="store_true")
-    delete_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", type=ascii, action="append")
-    delete_parser.add_argument("url", help="URL to point to for the request", type=ascii)
+    delete_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", action="append")
+    delete_parser.add_argument("url", help="URL to point to for the request")
 
     post_parser = subparsers.add_parser(HttpVerb.POST.value, help="POST request")
     post_parser.add_argument("-V", "--verbose", help="Activate verbose mode", action="store_true")
-    post_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", type=ascii, action="append")
+    post_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", action="append")
     post_data_group = post_parser.add_mutually_exclusive_group()
-    post_data_group.add_argument("-D", "--inlinedata", help="Inline data to be sent in the request body", type=ascii)
+    post_data_group.add_argument("-D", "--inlinedata", help="Inline data to be sent in the request body")
     post_data_group.add_argument("-F", "--file", help="File to be sent in the request body", type=argparse.FileType('r'))
-    post_parser.add_argument("url", help="URL to point to for the request", type=ascii)
+    post_parser.add_argument("url", help="URL to point to for the request")
 
     put_parser = subparsers.add_parser(HttpVerb.PUT.value, help="PUT request")
     put_parser.add_argument("-V", "--verbose", help="Activate verbose mode", action="store_true")
-    put_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", type=ascii, action="append")
+    put_parser.add_argument("-H", "--headers", help="Headers to be sent using the following format: 'Key:Value'", action="append")
     put_data_group = put_parser.add_mutually_exclusive_group()
-    put_data_group.add_argument("-D", "--inlinedata", help="Inline data to be sent in the request body", type=ascii)
+    put_data_group.add_argument("-D", "--inlinedata", help="Inline data to be sent in the request body")
     put_data_group.add_argument("-F", "--file", help="File to be sent in the request body", type=argparse.FileType('r'))
-    put_parser.add_argument("url", help="URL to point to for the request", type=ascii)
+    put_parser.add_argument("url", help="URL to point to for the request")
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # Validate header's format
+    if args.headers:
+        for header_arg in args.headers:
+            if len(header_arg.split(':')) != 2:
+                print("[FAILED] Invalid header format. Input headers using the following format: 'Key:Value'")
+                sys.exit(1)
+
+    return args
 
 
-flags = __parse_flags()
+# Build dictionary from header strings if they were given
+def __parse_headers(header_args):
+    header_dictionary = None
 
-# Validate header's format
-headers = None
-if flags.headers:
-    for header in flags.headers:
-        if len(header.split(':')) != 2:
-            print('Invalid header format. Input headers as: "Key:Value"')
-            sys.exit(1)
+    if header_args:
+        header_dictionary = {}
+        for string in header_args:
+            header = string.split(':')
+            header_dictionary[header[0]] = header[1]
 
-    # Build dictionary from header strings
-    # TODO
-    headers = {}
+    return header_dictionary
 
-# Send the request
-match flags.verb:
-    case HttpVerb.GET.value:
-        pprint.pprint(get(flags.url, headers, flags.verbose))
-    case HttpVerb.POST.value:
-        pprint.pprint(post(flags.url, flags.body, headers, flags.verbose))
-    case HttpVerb.PUT.value:
-        pprint.pprint(put(flags.url, flags.body, headers, flags.verbose))
-    case HttpVerb.DELETE.value:
-        pprint.pprint(delete(flags.url, headers, flags.verbose))
+
+# CLI Entry Point
+if __name__ == "__main__":
+    flags = __parse_flags()
+    headers = __parse_headers(flags.headers)
+
+    if flags.verbose:
+        print(f"[ARGS] {flags.verb} Arguments: {flags}")
+
+    # Send the request
+    match flags.verb:
+        case HttpVerb.GET.value:
+            pprint.pprint(get(flags.url, headers, flags.verbose))
+        case HttpVerb.POST.value:
+            pprint.pprint(post(flags.url, flags.body, headers, flags.verbose))
+        case HttpVerb.PUT.value:
+            pprint.pprint(put(flags.url, flags.body, headers, flags.verbose))
+        case HttpVerb.DELETE.value:
+            pprint.pprint(delete(flags.url, headers, flags.verbose))
