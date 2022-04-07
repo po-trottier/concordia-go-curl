@@ -71,7 +71,9 @@ def __receive_data(sock):
         header_dictionary[header[0]] = header[1]
 
     # Create a dictionary from the headers
-    content_length = int(header_dictionary.get('Content-Length'))
+    content_length = None
+    if 'Content-Length' in header_dictionary:
+        content_length = int(header_dictionary.get('Content-Length'))
 
     if content_length:
         data += sock.recv(content_length)
