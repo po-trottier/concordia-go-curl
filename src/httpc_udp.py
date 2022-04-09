@@ -52,14 +52,19 @@ def __parse_url(url):
     }
 
 
-def __receive_data(sock):
+def __receive_data(hostname, port):
+    # Bind to the hostname and port
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind((hostname, port))
+
     # Read the socket data byte by byte until we reach the end of the headers
-    data = b''
-    while b'\r\n\r\n' not in data:
-        data += sock.recv(__BUFFER_SIZE)
+    headers_buffer = b''
+    while b'\r\n\r\n' not in headers_buffer:
+        data, _ = sock.recvfrom(__BUFFER_SIZE)
+        headers_buffer += data
 
     # Get a string from the header bytes without the empty lines
-    header_data = data[:-4].decode()
+    header_data = headers_buffer[:-4].decode()
 
     # Ignore the HTTP Version and Request Status
     header_strings = header_data.splitlines()[1:]
@@ -75,50 +80,40 @@ def __receive_data(sock):
     if 'Content-Length' in header_dictionary:
         content_length = int(header_dictionary.get('Content-Length'))
 
+    body_buffer = b''
     if content_length:
-        data += sock.recv(content_length)
+        body_buffer += sock.recv(content_length)
 
-    return data
+    return headers_buffer, body_buffer
 
 
-def __parse_response(data):
-    lines = data.splitlines()
+def __parse_response(headers, body):
+    lines = headers.splitlines()
 
     # First line is always the status and status code
     full_status = re.search('HTTP/\d+\.?\d* (\d+) (.*)', lines[0])
 
     # Every line after that until the first empty line is a header
-    body_index = 0
     header_dictionary = {}
     for index in range(1, len(lines)):
         # Found the empty line
         if not lines[index]:
-            # If the next line is also empty continue until we find the body
-            if index + 1 < len(lines) and not lines[index + 1]:
-                continue
-            # We found the start of the body
-            body_index = index + 1
             break
         header = lines[index].split(': ')
         header_dictionary[header[0]] = header[1]
 
-    # Anything after the empty line is the body
-    body = None
-    if 0 < body_index < len(lines):
-        # Re-join the body lines to a string
-        body_string = '\r\n'.join(lines[body_index:])
-        # Attempt to parse the string to a dict (Expect JSON)
-        try:
-            body = json.loads(body_string)
-        # If the string is a valid JSON string return is raw
-        except ValueError:
-            body = body_string
+    # Attempt to parse the string to a dict (Expect JSON)
+    try:
+        body_content = json.loads(body.decode())
+    # If the string is a valid JSON string return is raw
+    except ValueError:
+        body_content = body
 
     return {
         "status_code": full_status.group(1),
         "status": full_status.group(2),
         "headers": header_dictionary,
-        "body": body
+        "body": body_content
     }
 
 
@@ -131,7 +126,7 @@ def __request(verb, url, header, body=None, file=None, verbose=False):
     if verbose:
         print(f"[INITIALIZE] {verb.value} Request: Initializing Socket")
 
-    __socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    __socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     try:
         if verbose:
@@ -142,9 +137,6 @@ def __request(verb, url, header, body=None, file=None, verbose=False):
 
         if verbose:
             print(f"[SENDING] {verb.value} Request:", parsed)
-
-        # Connect to the Host on the proper Port
-        __socket.connect((parsed['hostname'], parsed['port']))
 
         # Make sure the path is valid
         path = parsed['path'] if parsed['path'] else '/'
@@ -188,27 +180,27 @@ def __request(verb, url, header, body=None, file=None, verbose=False):
             content += "\r\n"
 
         # Send the Request to the URI
-        __socket.sendall(content.encode())
+        __socket.sendto(content.encode(), (parsed['hostname'], parsed['port']))
 
         if verbose:
             print(f"[SENT] {verb.value} Request:\r\n\r\n{content}")
 
+        __socket.close()
+
         # Receive the Request Response
-        data = __receive_data(__socket)
+        headers_data, body_data = __receive_data(parsed['hostname'], parsed['port'])
 
         if verbose:
             print(f"[SUCCESS] {verb.value} Request: Response Received")
-
-        __socket.close()
 
         if verbose:
             print(f"[PARSING] {verb.value} Request: Parsing Response Data")
 
         # Return the response data
-        return __parse_response(data.decode("utf-8"))
+        return __parse_response(headers_data.decode("utf-8"), body_data)
 
     except socket.error as error:
-        print(f"[FAILED] {verb.value} Error:", os.strerror(error.errno))
+        print(f"[FAILED] {verb.value} Error:", error.strerror)
         sys.exit(1)
 
     finally:
