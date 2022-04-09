@@ -34,34 +34,52 @@ class HttpVerb(Enum):
     PUT = "PUT"
 
 
+# Local connection
+__LOCAL_HOSTNAME = "localhost"
+__LOCAL_PORT = 1338
 # Connection ports
 __HTTP_PORT = 80
 # Socket buffer size
-__BUFFER_SIZE = 1
+__BUFFER_SIZE = 1024
 
 
 def __parse_url(url):
     # From URI RFC: https://datatracker.ietf.org/doc/html/rfc3986#appendix-B
     result = re.search('^(([^:/?#]+):)?(//([^/?#]*))?([^?#]*)(\?([^#]*))?(#(.*))?', url)
+
+    # When the port is in the URL
+    host = result.group(4)
+    port = __HTTP_PORT
+    if ':' in host:
+        connection = result.group(4).split(':')
+        host = connection[0]
+        port = int(connection[1])
+
     # Return the port here to allow for dynamic port selection based on the protocol later if we add SSL?
     return {
-        "hostname": result.group(4),
+        "hostname": host,
         "path": result.group(5),
         "args": result.group(6),
-        "port": __HTTP_PORT
+        "port": port
     }
 
 
-def __receive_data(hostname, port):
-    # Bind to the hostname and port
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((hostname, port))
-
+def __receive_data(sock):
     # Read the socket data byte by byte until we reach the end of the headers
+    data, address = sock.recvfrom(__BUFFER_SIZE)
+
+    body_index = 0
     headers_buffer = b''
-    while b'\r\n\r\n' not in headers_buffer:
-        data, _ = sock.recvfrom(__BUFFER_SIZE)
-        headers_buffer += data
+    for byte in data:
+        if b'\r\n\r\n' in headers_buffer:
+            break
+        headers_buffer += byte.to_bytes(1, sys.byteorder)
+        body_index += 1
+
+    # Get the request body
+    body_buffer = b''
+    if len(data) > body_index:
+        body_buffer = data[body_index:]
 
     # Get a string from the header bytes without the empty lines
     header_data = headers_buffer[:-4].decode()
@@ -74,15 +92,6 @@ def __receive_data(hostname, port):
     for string in header_strings:
         header = string.split(': ')
         header_dictionary[header[0]] = header[1]
-
-    # Create a dictionary from the headers
-    content_length = None
-    if 'Content-Length' in header_dictionary:
-        content_length = int(header_dictionary.get('Content-Length'))
-
-    body_buffer = b''
-    if content_length:
-        body_buffer += sock.recv(content_length)
 
     return headers_buffer, body_buffer
 
@@ -106,7 +115,7 @@ def __parse_response(headers, body):
     try:
         body_content = json.loads(body.decode())
     # If the string is a valid JSON string return is raw
-    except ValueError:
+    except ValueError as e:
         body_content = body
 
     return {
@@ -129,6 +138,9 @@ def __request(verb, url, header, body=None, file=None, verbose=False):
     __socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     try:
+        # Bind to the local hostname and port
+        __socket.bind((__LOCAL_HOSTNAME, __LOCAL_PORT))
+
         if verbose:
             print(f"[PARSING] {verb.value} Parsing URL:", url)
 
@@ -185,16 +197,16 @@ def __request(verb, url, header, body=None, file=None, verbose=False):
         if verbose:
             print(f"[SENT] {verb.value} Request:\r\n\r\n{content}")
 
-        __socket.close()
-
         # Receive the Request Response
-        headers_data, body_data = __receive_data(parsed['hostname'], parsed['port'])
+        headers_data, body_data = __receive_data(__socket)
 
         if verbose:
             print(f"[SUCCESS] {verb.value} Request: Response Received")
 
         if verbose:
             print(f"[PARSING] {verb.value} Request: Parsing Response Data")
+
+        __socket.close()
 
         # Return the response data
         return __parse_response(headers_data.decode("utf-8"), body_data)
